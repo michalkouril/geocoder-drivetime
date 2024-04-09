@@ -110,6 +110,7 @@ rdcrn_drivetime <- function(filename, out_filename, consortium = "ctsa") {
 
   #modify file name
   #out_filename = sub("\\.csv", paste0("_",consortium, ".csv"), out_filename)
+
   write.csv(output, file = out_filename,row.names = F)
   if (consortium == "ctsa"){
     return(list(output = output, d_to_ctsa_centers = d_to_centers))
@@ -137,13 +138,24 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
   d$non_address_text <- dht::address_is_nonaddress(d$address)
   
   ## exclude 'bad' addresses from geocoding (unless specified to return all geocodes)
+  ## exclude 'bad' addresses from geocoding (unless specified to return all geocodes)
   if (score_threshold == "all") {
     d_for_geocoding <- d
   } else {
-    d_excluded_for_address <- dplyr::filter(d, cincy_inst_foster_addr | po_box | non_address_text)
-    d_for_geocoding <- dplyr::filter(d, !cincy_inst_foster_addr & !po_box & !non_address_text)
+    d_excluded_for_address <- dplyr::filter(d, po_box | non_address_text)
+    if ('lat' %in% colnames(d) & 'lon' %in% colnames(d)){
+      d <- d %>%
+        dplyr::mutate(geocode_result = ifelse(!is.na(lat & lon),'geocoded_input', NA))
+    }
+    
+    d_for_geocoding <- d %>%
+      dplyr::filter( !po_box & !non_address_text)
+    
+    if ('lat' %in% colnames(d) & 'lon' %in% colnames(d)){    
+      d_for_geocoding <-d_for_geocoding %>%
+        dplyr::select(-c('lat','lon')) 
+    }
   }
-  
   
   out_template <- tibble(
     street = NA, zip = NA, city = NA, state = NA,
@@ -298,29 +310,107 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
 
 
 rdcrn_run <- function(opt){
-  # #browser()
+  if (is.null(opt$output_prefix)){opt$output_prefix = 'output'}
+  if (!file.exists(opt$filename)){
+    stop("Cannot find input file. Please check if the input file exists.")
+  }
   
+  log_filename = paste0("/tmp/",opt$output_prefix, "-log.txt")
+  
+  out_filename = paste0("/tmp/",opt$output_prefix, "-with-phi.csv")
+  deid_filename = paste0("/tmp/",opt$output_prefix, "-deid.csv")
+  
+  zz <- file(log_filename, open = "wt")
+  sink(zz, type = "output",split=TRUE)
+  sink(zz,type = "message")
+
   if (is.null(opt$score_threshold)) opt$score_threshold <- 0.5
-  d <- readr::read_csv(opt$filename, show_col_types = FALSE)
+  tryCatch({
+    d <- read.csv(opt$filename)
+    
+  },error = function(e){
+    cat("Please check input file.\nPlease make sure to enclose the address information in quotation marks (e.g., “) if it contains commas.\n")
+    stop()
+  })
+  
+  if (!"address_date" %in% colnames(d)){
+    cat("`address_date` is missing from data.\n`address_date` is recommended to record participant's address history.
+        \nCreating empty `address_date` column...",'\n')
+    d = d %>% mutate(address_date = NA) %>%
+      relocate(address_date, .before = address)
+    
+    # Generate a temporary file path
+    temp_file <- tempfile(fileext = ".csv")
+    
+    write.csv(d,temp_file , row.names = F, na = "")
+    opt$filename = temp_file
+  }
+  
+
+  #if there are geocoded data with non-missing addresses in data with `lat` and `lon` columns, we still do the geocoding
+  if ("lat" %in% colnames(d) &"lon" %in% colnames(d)) {
+    d_lat_lon = d %>%
+      dplyr::filter(is.na(lat & lon) & !is.na(address))
+    
+    if (nrow(d_lat_lon) == 0){rm('d_lat_lon')}
+  }
   
   # check if we have coordinates -- if not let's geocode first
-  if (!"lat" %in% names(d) || !"lon" %in% names(d)) {
-    geocoded_df <- rdcrn_geocode(filename = opt$filename, score_threshold = opt$score_threshold, out_filename = opt$out_filename)
-    drivetime_input <- opt$out_filename
+  if (!"lat" %in% names(d) || !"lon" %in% names(d) || 'd_lat_lon' %in% ls()) {
+    
+    geocoded_df <- rdcrn_geocode(filename = opt$filename, score_threshold = opt$score_threshold, out_filename = out_filename)
+    drivetime_input <- out_filename
   } else {
+    cat("Input data has already been geocoded. Skip geocoding","\n")
     drivetime_input <- opt$filename
   }
   
-  output_ctsa = rdcrn_drivetime(drivetime_input, opt$out_filename,"ctsa")
+  
+  
+  output_ctsa = rdcrn_drivetime(drivetime_input, out_filename,"ctsa")
   output_ctsa_df = output_ctsa$output
   d_ctsa_list = output_ctsa$d_to_ctsa_centers
-    
-  output_cegir = rdcrn_drivetime(drivetime_input, opt$out_filename,"cegir")
+
+      
+  output_cegir = rdcrn_drivetime(drivetime_input, out_filename,"cegir")
   output_cegir_df = output_cegir$output
   d_cegir_list = output_cegir$d_to_cegir_centers
   
+  
+
   output_df = dplyr::inner_join(output_ctsa_df, output_cegir_df) 
-  write.csv(output_df, file = opt$out_filename,row.names = F)
+  #write.csv(output_df, file = opt$out_filename,row.names = F)
+  
+  
+  output = output_df %>%
+    dplyr::mutate(version = "geoocoder_shiny_0.0.1")
+  
+  include_deid_fields = opt$include_deid_fields
+  if(is.null(include_deid_fields)){
+    include_deid_fields = c("id","date","matched_state","precision","geocode_result","nearest_center_ctsa","distance_ctsa", "nearest_center_cegir",	"distance_cegir")
+    field_list = include_deid_fields
+  }else{
+    field_list = unlist(strsplit(include_deid_fields,","))
+    
+    if (length(include_deid_fields) == 1 &  length(field_list) > 1){
+      field_list = trimws(field_list)
+    }
+  }
+  
+  
+  
+  
+  
+  output_deid = output %>% dplyr::select(any_of(field_list))
+  
+
+  
+
+  write.csv(output,out_filename,row.names = F, na = "")
+  write.csv(output_deid,deid_filename,row.names = F, na = "")
+
+  sink(type = "output",split=TRUE)
+  sink(type = "message")
   
   return(list(output_df = output_df, d_ctsa_list = d_ctsa_list, d_cegir_list = d_cegir_list))
 }
