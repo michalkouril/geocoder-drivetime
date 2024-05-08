@@ -89,7 +89,9 @@ rdcrn_drivetime <- function(filename, out_filename, consortium = "ctsa") {
   
   
   d$raw_data$d_to_centers[indexes] <- list_of_rows
-  d_to_centers <- setNames(d$raw_data$d_to_centers, d$raw_data$id)
+  list_names = paste(d$raw_data$id, d$raw_data$address_date,sep = "_")
+  list_names <- gsub("_NA$", "", list_names)
+  d_to_centers <- setNames(d$raw_data$d_to_centers, list_names)
   
   d$raw_data = d$raw_data %>% 
     dplyr::select(-d_to_centers)

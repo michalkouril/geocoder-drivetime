@@ -1,4 +1,3 @@
-# Install required packages if not already installed
 # install.packages(c("shiny", "leaflet", "dplyr", "sf", "tidygraph", "ggraph"))
 source("utils.R")
 
@@ -38,56 +37,58 @@ colnames(cegir_centers) <- c("abbreviation", "consortium" ,"name","address","cit
 # Define UI
 ui <- fluidPage(
   shinyjs::useShinyjs(),
-
+  
   sidebarLayout(
     sidebarPanel(
-    titlePanel("User input"),
-    id = "input_fields",
-    helpText("Please specify any parameters you wish to change before uploading file or submit an address"),
-    helpText("Note: If you want to input an address manually, please hit “Reset data” if a file was previously uploaded"),
-    fileInput("file","Upload the file"),
-    selectInput("consortium", "Select Consortium", choices = c("CTSA","CEGIR"), selected = NULL),
-    selectInput("ID", "Select Participant ID", choices = ""),
-    textInput(inputId = 'new_address', label = 'Address Input', placeholder = "Enter the address"),
-    textInput(inputId = 'out_filename', label = 'Output File Name', placeholder = "Enter output file name", value = "/tmp/output.csv"),
-    textInput("score_threshold", "Enter score threshold","0.5"),
-    
-    bsTooltip(id = "score_threshold", title = "'all' or a numeric value as a threshold to be classified as 'geocoded'", 
-              placement = "right", trigger = "hover"),
-    
-    numericInput("new_lat", "Enter Latitude", value = NA),
-    numericInput("new_lon", "Enter Longitude", value = NA),
-    #selectInput("selected_center", "Select Center", choices = "",selected = NULL),
-    actionButton("submit_button", "Submit address or latitude & longtitude"),
-    actionButton("reset_button", "Reset data")
-  ),
-  mainPanel(
-    # Conditional rendering of text based on the number of rows in the table
-    uiOutput("message2"),
-    
-    div(
-      style = "display: flex; height: 10vh; overflow-x:auto; overflow-y:auto;",
-      tableOutput("info_table")
-    )
-  ,
-
-    div(
-      style = "display: flex; align-items: center; justify-content: center; height: 55vh;",
+      titlePanel("User input"),
+      id = "input_fields",
+      helpText("Please specify any parameters you wish to change before uploading file or submit an address"),
+      helpText("Note: If you want to input an address manually, please hit “Reset data” if a file was previously uploaded"),
+      fileInput("file","Upload the file"),
+      selectInput("consortium", "Select Consortium", choices = c("CTSA","CEGIR"), selected = NULL),
+      selectInput("ID", "Select Participant ID", choices = ""),
+      selectInput("address_date", "Select the date of interest", choices = ""),
       
-      leafletOutput("map")
+      textInput(inputId = 'new_address', label = 'Address Input', placeholder = "Enter the address"),
+      textInput(inputId = 'output_prefix', label = 'Output Prefix', placeholder = "Enter output file name", value = "output"),
+      textInput("score_threshold", "Enter score threshold","0.5"),
+      
+      bsTooltip(id = "score_threshold", title = "'all' or a numeric value as a threshold to be classified as 'geocoded'", 
+                placement = "right", trigger = "hover"),
+      
+      numericInput("new_lat", "Enter Latitude", value = NA),
+      numericInput("new_lon", "Enter Longitude", value = NA),
+      #selectInput("selected_center", "Select Center", choices = "",selected = NULL),
+      actionButton("submit_button", "Submit address or latitude & longtitude"),
+      actionButton("reset_button", "Reset data")
     ),
-  uiOutput("message"),
-  
-  div(
-    style = "display: flex; overflow-x:auto; overflow-y:auto;",
-    tableOutput("warning_table")
+    mainPanel(
+      # Conditional rendering of text based on the number of rows in the table
+      uiOutput("message2"),
+      
+      div(
+        style = "display: flex; height: 10vh; overflow-x:auto; overflow-y:auto;",
+        tableOutput("info_table")
+      )
+      ,
+      
+      div(
+        style = "display: flex; align-items: center; justify-content: center; height: 55vh;",
+        
+        leafletOutput("map")
+      ),
+      uiOutput("message"),
+      
+      div(
+        style = "display: flex; overflow-x:auto; overflow-y:auto;",
+        tableOutput("warning_table")
+      )
     )
-  )
-
+    
   )
 )
 
-  
+
 
 
 
@@ -101,7 +102,7 @@ server <- function(input, output, session) {
   tempfile_path <- reactiveVal("/tmp/temp.csv")
   
   #reactive values from user input
-  out_filename <- reactive(input$out_filename)
+  output_prefix <- reactive(input$output_prefix)
   score_threshold <- reactive(type.convert(input$score_threshold, as.is = T))
   consortium <- reactive(tolower(input$consortium))
   centers = reactiveVal(NULL)
@@ -113,7 +114,8 @@ server <- function(input, output, session) {
   drive_time_output <- reactiveVal(NULL)
   d_ctsa_list <- reactiveVal(NULL)
   d_cegir_list <- reactiveVal(NULL)
-
+  address_date = reactive(input$address_date)
+  
   
   
   
@@ -121,7 +123,7 @@ server <- function(input, output, session) {
   # Initialize the map
   output$map <- renderLeaflet({
     leaflet() %>%
-    addTiles() %>%
+      addTiles() %>%
       setView(lng = -95.7129, lat = 37.0902, zoom = 4)
   })
   
@@ -142,48 +144,52 @@ server <- function(input, output, session) {
       clearShapes() %>%
       clearMarkers() %>%
       addAwesomeMarkers(centers()$lon, centers()$lat, popup = centers()$abbreviation, label = centers()$abbreviation, 
-                                                        icon = icon.center, layerId = centers()$abbreviation
+                        icon = icon.center, layerId = centers()$abbreviation
       ) 
     
   })
-    
   
-
+  
+  
+  
+  
+  
   
   observeEvent(input$file, {
-  req(input$file)
+    req(input$file)
     updateSelectInput(session, "ID", choices = "")
     updateTextInput(session, "new_address", value = "")
+    updateSelectInput(session, "address_date", choices = "")
     filename <- input$file$datapath
     
     
-    drive_time_result <- rdcrn_run(list(filename = filename, out_filename = out_filename(), score_threshold = score_threshold()))
+    drive_time_result <- rdcrn_run(list(filename = filename, output_prefix = output_prefix(), score_threshold = score_threshold()))
     
- 
+    
     drive_time_output_all(drive_time_result)
     
   })
   
-
+  
   observe({
     req(consortium(), drive_time_output_all())
-
+    
     drive_time_result = drive_time_output_all()$output_df %>%
       select(-address, -matches("^matched"))
     
     d_ctsa_list(drive_time_output_all()$d_ctsa_list)
     d_cegir_list(drive_time_output_all()$d_cegir_list)
     
-
+    
     if (!is.null(drive_time_result) && nrow(drive_time_result) > 0) {
       drive_time_result <- drive_time_result %>%
         dplyr::rename_with(., stringr::str_to_lower)
-
+      
       # Assign ID if not available
       if (!"id" %in% colnames(drive_time_result)) {
         drive_time_result$id <- rownames(drive_time_result)
       }
-
+      
       # Define the pattern to create "nearest_center" and "distance" columns based on selected consortium
       pattern <- paste0("_", consortium())
       
@@ -198,7 +204,9 @@ server <- function(input, output, session) {
       }
       
     }
-
+    
+    drive_time_result = drive_time_result %>% mutate(address_date = ifelse(is.na(address_date), "NA",address_date))
+    
     drive_time_output(drive_time_result)
   })
   
@@ -223,14 +231,14 @@ server <- function(input, output, session) {
     
     filename <- tempfile_path()
     
-    drive_time_result <- rdcrn_run(list(filename = filename, out_filename = out_filename(), score_threshold = score_threshold()))
-  
+    drive_time_result <- rdcrn_run(list(filename = filename, output_prefix = output_prefix(), score_threshold = score_threshold()))
+    
     
     drive_time_output_all(drive_time_result)
     
   })
   
-
+  
   
   observeEvent(list(drive_time_output(),input$file),{
     req(drive_time_output())
@@ -239,19 +247,24 @@ server <- function(input, output, session) {
     
   })
   
-
-  # Observe block to update output whenever the file is uploaded
+  
   
   
   
   
   # Combine selected address from the drop-down and manually entered coordinates
   selected_coordinates <- reactive({
-    req(drive_time_output())
+    req(drive_time_output(), address_date())
     
-    if (!is.null(input$ID) && input$ID %in% drive_time_output()$id && !is.null(drive_time_output())) {
+    if (!is.null(input$ID) & input$ID %in% drive_time_output()$id & !is.null(drive_time_output()) & address_date() != "") {
       selected_data <- drive_time_output() %>%
         filter(id == input$ID)
+      
+      if (nrow(selected_data) >1) {
+        selected_data = selected_data %>%
+          filter(address_date == address_date()) 
+      }
+      
       return(list(lat = selected_data$lat, lon = selected_data$lon,nearest_center = selected_data$nearest_center))
     } else if (!is.na(input$new_lat) && !is.na(input$new_lon)) {
       return(list(lat = input$new_lat, lon = input$new_lon))
@@ -264,12 +277,12 @@ server <- function(input, output, session) {
   
   # Observe changes in the selected center and update the map
   observe({
-    req(drive_time_output(), centers(),input$ID)
+    req(drive_time_output(), centers(),input$ID,address_date(), selected_center())
     leafletProxy("map") %>%
       clearShapes()
     
     if (!is.null(selected_coordinates()$lat) && !is.null(selected_coordinates()$lon)) {
-
+      
       selected_center_info_data <- centers() %>%
         filter(abbreviation == selected_center() ) %>% 
         dplyr::rename_with(., stringr::str_to_lower) %>%
@@ -334,7 +347,7 @@ server <- function(input, output, session) {
         )
     }
     
-
+    
     if ((!is.null(session$userData$prev_marker_id) && session$userData$prev_marker_id != marker_id &&
          session$userData$prev_marker_id == session$userData$nearest_center) || (session$userData$prev_ID != input$ID)) {
       leafletProxy("map") %>%
@@ -346,12 +359,12 @@ server <- function(input, output, session) {
                           group = "nearest_center")
       
       
-        
-
+      
+      
     }    
-
     
-
+    
+    
     
     
     leafletProxy("map") %>%
@@ -368,26 +381,62 @@ server <- function(input, output, session) {
   })  
   
   
-  observeEvent(input$consortium,{
+  observeEvent(consortium(),{
     session$userData$prev_marker_id = NULL
     session$userData$nearest_center = NULL
     #selected_center(NULL)
     
+    
   })
   
+  
+  
+  id_data <- eventReactive({input$ID
+    drive_time_output()},{
+      req(drive_time_output(),input$ID)
+      #address_date(NULL)
+      data <- drive_time_output() %>%
+        filter(id == input$ID) 
+      
+      data
+      #updateSelectInput(session, "address_date", choices = isolate(id_data()$address_date))
+      
+    })
+  
+  
+  observeEvent(id_data(),{
+    req(id_data(),input$ID)
+    updateSelectInput(session, "address_date", choices = id_data()$address_date)
+    
+  })
+  
+  
+  id_date_data <- reactiveVal(NULL)
+  
+  observeEvent(list(id_data(),input$address_date),{
+    req(id_data(),input$ID,input$address_date)
+    #address_date(NULL)
+    data <- id_data() %>%
+      filter(address_date == input$address_date) 
 
+    if (!rlang::is_empty(data$address_date)){
+      id_date_data(data)
+      }else{id_date_data(NULL)}
+    
+    #updateSelectInput(session, "address_date", choices = isolate(id_data()$address_date))
+    
+  })  
+  
   
   # Initialize the default selected center based on the nearest center
-  observeEvent({input$ID 
-              input$consortium
-              },{
-    req(centers())
+  observeEvent(
+    id_date_data(),{
+    req(input$ID, id_date_data(), centers(), address_date())
 
-    if (!is.null(input$ID) && !is.null(drive_time_output())) {
-      nearest_center <- drive_time_output() %>%
-        filter(id == input$ID) %>%
+    if (!is.null(input$ID) && !is.null(id_date_data()) && address_date() != "" ) {
+      nearest_center <- id_date_data() %>%
         pull(nearest_center)
-      
+
       
       if(!is.null(session$userData$prev_marker_id)){
         leafletProxy("map") %>%
@@ -398,8 +447,8 @@ server <- function(input, output, session) {
         
         
       }
-
-
+      
+      
       if (!is.null(nearest_center)) {
         #updateSelectInput(session, "selected_center", selected = nearest_center)
         
@@ -429,6 +478,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$reset_button, {
     updateSelectInput(session, "ID", choices = "")
+    updateSelectInput(session, "address_date", choices = "")
     updateTextInput(session, "new_address", value = "")
     updateNumericInput(session, "new_lat", value = NA)
     updateNumericInput(session, "new_lon", value = NA)
@@ -444,7 +494,7 @@ server <- function(input, output, session) {
                         icon = icon.center, layerId = centers()$abbreviation
       ) %>%
       setView(lng = -95.7129, lat = 37.0902, zoom = 4) 
-      
+    
   })
   
   failed_data <- reactive({
@@ -455,7 +505,7 @@ server <- function(input, output, session) {
       if (nrow(d) > 0){
         return(d)
       }else(data.frame())
-
+      
     }else{
       data.frame()
     }
@@ -468,7 +518,7 @@ server <- function(input, output, session) {
     req(failed_data())
     if (!is.null(failed_data()) ) {
       if (nrow(failed_data()) > 0)
-        tags$h4("Please examine the unsuccessfully geocoded data")
+        tags$h4("Please examine the data that has not been geocoded")
     }
   })
   
@@ -476,25 +526,39 @@ server <- function(input, output, session) {
   
   
   
-  selected_data <- eventReactive(list(input$ID,selected_center()),{
-    if (!is.null(input$ID) && !is.null(drive_time_output())) {
-      data = drive_time_output() %>%
-        filter(id == input$ID) 
-      #if data is geocoded, look for closest center. Otherwise, return empty dataframe
-      if (!is.na(data$lat[1])){
-        distances = drive_time_output_all()[[paste0('d_',consortium(),'_list')]][[input$ID]]
-        #print(distances[[selected_center()]])
+  selected_data <- eventReactive({list(input$ID,selected_center())
+    address_date()},{
+      if (!is.null(input$ID) && !is.null(drive_time_output()) && address_date() != "" && !is.null(selected_center())) {
+        data = drive_time_output() %>%
+          filter(id == input$ID) 
         
-        data = data %>%
-          mutate(selected_center = selected_center() ,
-                 d_to_selected_center = distances[[selected_center()]])
+        if (nrow(data) >1) {
+          
+          data = data %>%
+            filter(address_date == address_date()) 
+          
+          
+        }
+        
+        #if data is geocoded, look for closest center. Otherwise, return empty dataframe
+        if (!is.na(data$lat[1])){
+          list_id = paste(input$ID, address_date(),sep = "_")
+          list_id <- gsub("_NA$", "", list_id)
+          
+          
+          distances = drive_time_output_all()[[paste0('d_',consortium(),'_list')]][[list_id]]
+
+          
+          data = data %>%
+            mutate(selected_center = selected_center() ,
+                   d_to_selected_center = distances[[selected_center()]])
+        }
+        data
+        
+      } else {
+        data.frame()
       }
-      data
-        
-    } else {
-      data.frame()
-    }
-  })
+    })
   
   
   
@@ -510,7 +574,7 @@ server <- function(input, output, session) {
   
   
   
-
+  
 }
 
 # Run the application
