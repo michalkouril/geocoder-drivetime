@@ -123,6 +123,7 @@ rdcrn_drivetime <- function(filename, out_filename, consortium = "ctsa") {
 
 
 rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
+  require(dplyr)
   #browser()
   
   d <- readr::read_csv(filename, show_col_types = FALSE)
@@ -138,6 +139,13 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
   d$po_box <- dht::address_is_po_box(d$address)
   d$cincy_inst_foster_addr <- dht::address_is_institutional(d$address)
   d$non_address_text <- dht::address_is_nonaddress(d$address)
+  
+  
+  if ('score' %in% colnames(d) & 'precision' %in% colnames(d) & 'geocode_result' %in% colnames(d)){
+    d <- d %>%
+      dplyr::select(-c('score','precision')) %>%
+      dplyr::select(-starts_with('matched_'))
+  }
   
   ## exclude 'bad' addresses from geocoding (unless specified to return all geocodes)
   ## exclude 'bad' addresses from geocoding (unless specified to return all geocodes)
@@ -165,6 +173,8 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
     fips_county = NA, number = NA, prenum = NA
   )
   
+
+  # 
   ## geocode
   cli::cli_alert_info("now geocoding ...", wrap = TRUE)
   geocode <- function(addr_string) {
@@ -189,6 +199,8 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
     out
   }
   
+  
+  
   # if any geocodes are returned, regardless of score_threshold...
   if (nrow(d_for_geocoding) > 0) {
     d_for_geocoding$geocodes <- mappp::mappp(d_for_geocoding$address,
@@ -197,6 +209,7 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
                                              # cache = TRUE,
                                              # cache_name = "geocoding_cache"
     )
+    
     
     ## extract results, if a tie then take first returned result
     d_for_geocoding <- d_for_geocoding %>%
@@ -222,6 +235,7 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
                                        ordered = TRUE
       )) %>%
       dplyr::arrange(desc(precision), score)
+
   } else if (nrow(d_for_geocoding) == 0 & score_threshold != "all") {
     # if no geocodes are returned and not returning all geocodes,
     # then bind non-geocoded with out template
@@ -262,6 +276,7 @@ rdcrn_geocode <- function(filename, out_filename, score_threshold = 0.5) {
         lon = ifelse(geocode_result == "imprecise_geocode", NA, lon)
       ) %>%
       select(-po_box, -cincy_inst_foster_addr, -non_address_text) # note, just "PO" not "PO BOX" is not flagged as "po_box"
+    
   }
   
   ## write out file
@@ -354,8 +369,15 @@ rdcrn_run <- function(opt){
     d_lat_lon = d %>%
       dplyr::filter(is.na(lat & lon) & !is.na(address))
     
-    if (nrow(d_lat_lon) == 0){rm('d_lat_lon')}
+    if ('score' %in% colnames(d) & 'precision' %in% colnames(d) & 'geocode_result' %in% colnames(d)){
+      d_lat_lon <- d_lat_lon %>%
+        dplyr::filter(is.na(geocode_result) | geocode_result == "" )
+    }
+  
+  if (nrow(d_lat_lon) == 0){
+    rm('d_lat_lon')
   }
+}
   
   # check if we have coordinates -- if not let's geocode first
   if (!"lat" %in% names(d) || !"lon" %in% names(d) || 'd_lat_lon' %in% ls()) {
