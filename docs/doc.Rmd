@@ -75,6 +75,20 @@ Example address CSV files are [my_address_file.csv](tests/my_address_file.csv), 
 
 ## Step 2: Running the CTSA/CEGIR container
 
+**_Note_**: On Windows computers you may need to give Docker explicit permissions to access the folder containing the address file (and possibly restart the Docker daemon after you have done so). 
+\begin{center}
+\includegraphics[width=0.5\textwidth]{../figs/Windows_permission.png}
+\end{center}
+
+However, if notifications are disabled, the confirmation box will not appear and Docker will automatically decline the permission. In that case, go to **Docker Settings > Resources > FileSharing**. Add required folder and hit Apply & Restart
+
+![](../figs/Docker_Resources_settings.png)
+
+
+**_Note_**: The first time this process is run, docker will download the latest container from the ACC, which takes a few minutes of time. Later runs will not require internet connections (unless the container is to be updated with the latest version).
+
+**_Note_**: After processing, __please__ inspect the output files and fix obvious formatting problems with the address file should they arise (see also the section below on input address data formatting). The `*-deid.csv` file is safe to be sent to the ACC via secure upload to AWS (similar to the EMR data uploads).
+
 There are 2 options to generate output via Docker command, described below:
 
 ### 2.1 Run Shiny App via docker command
@@ -123,17 +137,82 @@ Once the Shiny App successfully geocoded your input, selected participant's data
 \end{center}
 
 
+Users can select consortium of interest in **Select Consortium** dropdown menu anytime before or after geocoding process
+\begin{center}
+\includegraphics[width=0.75\textwidth]{../figs/Shiny_App_consortium.png}
+\end{center}
+
+Available options are:
+
+  - **`CTSA`**
+  - **`CEGIR`**
+
+Both selected participant table and unsuccessfully geocoded table have the following columns:
+  
+  -   **`id`**: particpant's ID
+  -   **`address_date`**: date when participants resides in the address of interest
+  -   **`lat`** and **`lon`**: geocoded coordinates for matched address
+  -   **`score`**: The percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match. Note that each score is relative within a precision method (i.e. a `score` of `0.8` with a `precision` of `range `is not the same as a `score` of `0.8` with a `precision` of `street`)
+  -   **`precision`**: The method/precision of the geocode. The value will be one of:
+  
+      + `range`: interpolated based on address ranges from street segments
+      + `street`:  center of the matched street
+      + `intersection`: intersection of two streets
+      + `zip`: centroid of the matched zip code
+      + `city`: centroid of the matched city
+    
+  -   **`geocode_result`**: A character string summarizing the geocoding result. The value will be one of
+  
+      + `geocoded`: the address was geocoded with a `precision` of either `range` or `street` and a `score` of `0.5` or greater.
+      + `imprecise_geocode`: the address was geocoded, but results were suppressed because the `precision` was `intersection`, `zip`, or `city` and/or the `score` was less than `0.5`.
+      + `po_box`: the address was not geocoded because it is a PO Box
+      + `non_address_text`: the address was not geocoded because it was blank or listed as "foreign", "verify", or "unknown" 
+    
+  -   **`nearest_center_ctsa`**	: abbreviation of nearest CTSA center
+  -   **`distance_ctsa`**: drive time to nearest CTSA center
+  -   **`nearest_center_cegir`**: abbreviation of nearest CEGIR center
+  -   **`distance_cegir`**: drive time to nearest CEGIR center
+  -   **`nearest_center`**: abbreviation of nearest center in consortium selected
+  -   **`distance`**:  drive time to nearest center in consortium selected
+  
+In selected participant table, there are 2 additional columns that reflect selected center on map:
+  
+  -   **`selected_center`**: abbreviation of the clicked center
+  -   **`d_to_selected_center`**: drivetime to selected center
+  
+**_Note_**: By default, **`selected_center`** is the abbreviation of the nearest center and **`d_to_selected_center`** is based on selected center
+
+
 Participant IDs will appear in **Select Participant ID** drop-down menu. Users can then select participant ID of interest in **Select Participant ID** drop-down menu. If the selected participant have multiple addresses, users can select the date of interest:
 
 \begin{center}
 \includegraphics[width=0.75\textwidth]{../figs/Shiny_App_participant_date.png}
 \end{center}
 
-By default, the participant's home address (indicated by a green home symbol) and the nearest center (indicated by an orange medkit symbol) are displayed on the map.
+By default, the participant's home address (indicated by a green home symbol) and the nearest center (indicated by an orange medkit symbol) are displayed on the map, together with the centers in the selected consortium (indicated by a blue medkit symbol)
 
 \begin{center}
 \includegraphics[width=0.75\textwidth]{../figs/default_map_nearest_center.png}
 \end{center}
+
+When users click on a different center, the selected center turns red. Also, **`selected_center`** and **`d_to_selected_center`** are updated according to the clicked center on map.
+
+\begin{center}
+\includegraphics[width=0.75\textwidth]{../figs/Shiny_App_selected_center.png}
+\end{center}
+
+**_Note_**: If the participant's address(es) could not be geocoded successfully, the green home symbol would not be displayed on the map. However, the data will still appear in the selected participant's data table.
+
+
+If `my_address_file.csv` is the input address uploaded to Shiny App with an address column named `address`, with default `output` output prefix, will produce 3 output files:
+
+- `output-with-phi.csv`: This file has full output data, __including PII data__. Do NOT sent this to the ACC.
+- `output-deid.csv`: This file contains de-identified fields specified by the user as well as location-derived information. By default, the list of de-identified fields contain "id", "address_date", "matched_state", "precision", "geocode_result", "nearest_center_ctsa", "distance_ctsa", "nearest_center_ctsa", "distance_ctsa", "version". 
+    
+    + "id" and "address_date" are copied verbatim from the input address file; it is the user's responsibility to ensure they don’t contain PHI
+      
+- `output-log.txt`: This file is an output log of processing.
+
 
 
 
@@ -145,51 +224,25 @@ If `my_address_file.csv` is an address file in the current working directory wit
   
     ```sh
     docker run --rm -v $PWD:/tmp ghcr.io/dohn5r/geocoder_shiny:0.0.1 \
-    -s PCGC_UTAH -i my_address-file.csv -o UTAH_output 
+    -i my_address_file.csv -o output_file 
     ```
   
   - Windows (CMD):
   
     ```sh
     docker run --rm -v "%cd%":/tmp ghcr.io/dohn5r/geocoder_shiny:0.0.1 ^
-    -s PCGC_UTAH -i my_address-file.csv -o UTAH_output
+    -i my_address_file.csv -o output_file
     ```
 
 
 will produce 3 output files:
 
-- `UTAH_output.csv`: This file has full output data, __including PII data__. Do NOT sent this to the ACC.
-- `UTAH_output-deid.csv`: This file contains de-identified fields specified by the user as well as location-derived information. By default, the list of de-identified fields contain "id","address_date","matched_state","precision","geocode_result","fraction_assisted_income", "fraction_high_school_edu","median_income","fraction_no_health_ins","fraction_poverty","fraction_vacant_housing", "dep_index","drivetime_selected_center","nearest_center_pcgc","drivetime_pcgc","version". “id” and “address_date” are copied verbatim from the input address file; it is the user's responsibility to ensure they don’t contain PHI
-- `UTAH_output-log.txt`: This file is an output log of the processing.
+- `output_file-with-phi.csv`: This file has full output data, __including PII data__. Do NOT sent this to the ACC.
+- `output_file-deid.csv`: This file contains de-identified fields specified by the user as well as location-derived information. By default, the list of de-identified fields contain "id", "address_date", "matched_state", "precision", "geocode_result", "nearest_center_ctsa", "distance_ctsa", "nearest_center_ctsa", "distance_ctsa", "version". 
+    
+    + "id" and "address_date" are copied verbatim from the input address file; it is the user's responsibility to ensure they don’t contain PHI
 
-### 2.1 Running via command line or interact with a Shiny App
-
-
-**_Note_**: The example above uses `-s PCGC_UTAH` for CTSA/CEGIR center in Utah. To change the care center, replace `-s PCGC_UTAH` with one of the site abbrevations below (e.g., `-s PCGC_YALE`):
-
-| **Abbreviation** |  **Name** |
-|--------------------|-------------------|
-PCGC_YALE | `Yale`
-PCGC_BOSTON | `Boston Childrens`
-PCGC_MTSINAI | `Mt. Sinai`
-PCGC_COLUMBIA | `Columbia`
-PCGC_CHOP | `CHOP`
-PCGC_UTAH | `Utah`
-PCGC_CHLA | `Childrens of LA`
-
-**_Note_**: On Windows computers you may need to give Docker explicit permissions to access the folder containing the address file (and possibly restart the Docker daemon after you have done so). 
-\begin{center}
-\includegraphics[width=0.5\textwidth]{../figs/Windows_permission.png}
-\end{center}
-
-However, if notifications are disabled, the confirmation box will not appear and Docker will automatically decline the permission. In that case, go to **Docker Settings > Resources > FileSharing**. Add required folder and hit Apply & Restart
-
-![](../figs/Docker_Resources_settings.png)
-
-
-**_Note_**: The first time this process is run, docker will download the latest container from the ACC, which takes a few minutes of time. Later runs will not require internet connections (unless the container is to be updated with the latest version).
-
-**_Note_**: After processing, __please__ inspect the output files and fix obvious formatting problems with the address file should they arise (see also the section below on input address data formatting). The `*-deid.csv` file is safe to be sent to the ACC via secure upload to AWS (similar to the EMR data uploads).
+- `output_file-log.txt`: This file is an output log of processing.
 
 ### Running the CTSA/CEGIR deGAUSS container (the longer version)
 
@@ -214,32 +267,15 @@ or
   docker run ghcr.io/dohn5r/geocoder_shiny:0.0.1 --version
   ```
 
-- `--site-list`: Print all available sites with this command:
-  ```sh
-  docker run ghcr.io/dohn5r/geocoder_shiny:0.0.1 --site-list
-  ```
-
 This container __requires__ both of the following arguments:
 
 - `-i` to specify the path to the input address CSV file
-- `-s` or `--site` to specify theabbreviation of the CTSA/CEGIR center of interest
-
-| **Abbreviation** |  **Name** |
-|--------------------|-------------------|
-PCGC_YALE | `Yale`
-PCGC_BOSTON | `Boston Childrens`
-PCGC_MTSINAI | `Mt. Sinai`
-PCGC_COLUMBIA | `Columbia`
-PCGC_CHOP | `CHOP`
-PCGC_UTAH | `Utah`
-PCGC_CHLA | `Childrens of LA`
-
 
 This container takes the following optional arguments:
 
--   `-o` or `--output-file-prefix` to specify prefix of output files. By default, the prefix is `output`, which will generate output.log, output-phi.csv, output-deid.csv
+-   `-o` or `--output-file-prefix` to specify prefix of output files. By default, the prefix is `output`, which will generate output-log.txt, output-phi.csv, output-deid.csv
 -   `--f` or `--include-deid-fields` to specify list of fields to include in output. Default fields:
-    - id, address_date, precision, geocode_result, fraction_assisted_income, fraction_high_school_edu, median_income, fraction_no_health_ins, fraction_poverty, fraction_vacant_housing, dep_index, drivetime_selected_center, nearest_center_pcgc, drivetime_pcgc, version
+    - id, address_date, matched_state, precision, geocode_result, nearest_center_ctsa, distance_ctsa, nearest_center_ctsa, distance_ctsa, version
 -   `--force` to force the container to overwrite output files if one of the output files already exists. By default, the program would exit if one of the output files already exists
 
 ### Running the CTSA/CEGIR  container (additional details)
@@ -261,12 +297,12 @@ This Docker image does the following:
     + `imprecise_geocode`: the address was geocoded, but results were suppressed because the `precision` was `intersection`, `zip`, or `city` and/or the `score` was less than `0.5`.
     + `po_box`: the address was not geocoded because it is a PO Box
     + `non_address_text`: the address was not geocoded because it was blank or listed as "foreign", "verify", or "unknown" 
+
     
 
-- then compute drive time to a Pediatric Cardiac Genomics Consortium (CTSA/CEGIR) specified by user, adding the following columns:
-  - **`drivetime_selected_center`**: computed estimated drive time to center specified by user
-  - **`nearest_center_pcgc`**: Nearest CTSA/CEGIR center as computed by the Docker image 
-  - **`distance_pcgc`**: Distance to the nearest CTSA/CEGIR center as computed by the Docker image 
+- then compute drive time to a CTSA/CEGIR specified by user, adding the following columns:
+  - **`nearest_center_ctsa`** and **`nearest_center_cegir`**: Nearest CTSA/CEGIR center as computed by the Docker image 
+  - **`distance_ctsa`** and **`distance_cegir`**: Distance to the nearest CTSA/CEGIR center as computed by the Docker image 
 
 # Details on the processing steps contained in the software
 
@@ -299,13 +335,9 @@ Drive time isochrones were obtained using a [self-hosted openroute service](http
 
 We defined 24 levels of isochrones with driving distances up to 960 minutes (16 hours):  15  30  45  60  75  90  105 120 135 150 165 180 195 210 225 240 300 360 420 480 600 720 840 960 minutes
 
+#### 3. Nearest center
 
-<!-- ##### Geomarker Data -->
-
-<!-- - `download_isochrones.R` was used to download and prepare drive time isochrones -->
-<!-- - Isochrone shape files are stored at [`s3://geomarker/drivetime/isochrones/`](https://geomarker.s3-us-east-2.amazonaws.com/drivetime/isochrones) -->
-<!-- - A list of available care center addresses is also stored at [`s3://geomarker/drivetime/center_addresses.csv`](https://geomarker.s3-us-east-2.amazonaws.com/drivetime/center_addresses.csv) -->
-
+The centers with the shortest drive times are identified from the computed drivetime data above.
 
 ## DeGAUSS Details
 

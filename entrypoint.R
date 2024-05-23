@@ -20,7 +20,7 @@ doc <- "
         -i --input-file <filename>
                               Specify input csv file.
         --force               Overwrite existing files if they exist.
-        -o <output-prefix> --output-file-prefix <output-prefix>
+        -o --output-file-prefix <output-prefix>
                               Specify output prefix ( By default, the prefix is `output`, which will generate output.log, output-phi.csv, output-deid.csv).
         -f --include-deid-fields <fields>
                               Specify list of fields to include in output.
