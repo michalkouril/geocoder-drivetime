@@ -37,9 +37,21 @@ colnames(cegir_centers) <- c("abbreviation", "consortium" ,"name","address","cit
 # Define UI
 ui <- fluidPage(
   shinyjs::useShinyjs(),
-  
+  tags$head(
+    tags$style(
+      HTML("
+        body {
+          padding-left: 0.5%; /* Adjust left padding */
+          padding-right: 0.5%; /* Adjust right padding */
+          padding-top: 0.5%; /* Adjust top padding */
+          padding-bottom: 0.5%; /* Adjust bottom padding */
+        }
+      ")
+    )
+  ),
   sidebarLayout(
     sidebarPanel(
+      width = 3,
       titlePanel("User input"),
       id = "input_fields",
       helpText("Please specify any parameters you wish to change before uploading file or submit an address"),
@@ -63,6 +75,7 @@ ui <- fluidPage(
       actionButton("reset_button", "Reset data")
     ),
     mainPanel(
+      width = 9,
       # Conditional rendering of text based on the number of rows in the table
       uiOutput("message2"),
       
