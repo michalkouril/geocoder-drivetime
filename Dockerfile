@@ -1,4 +1,4 @@
-FROM rocker/r-ver:4.2.1
+FROM rocker/r-ver:4.4.0
 
 # DeGAUSS container metadata
 ENV degauss_name="geocoder"
@@ -35,7 +35,12 @@ RUN apt-get update && apt-get install -y \
     libv8-dev\
     libfontconfig1-dev \
     libfreetype6-dev \
-    ruby-full \
+    libgit2-dev \
+    libproj-dev \
+    libgeos-dev \
+    libsecret-1-0 \
+    libharfbuzz-dev \
+    libfribidi-dev\
     && apt-get clean
 
 
