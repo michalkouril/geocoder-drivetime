@@ -93,7 +93,21 @@ There are 2 options to generate output via Docker command, described below:
 
 ### 2.1 Run Shiny App via docker command
 
-This command launches a Shiny app at http://localhost:3838:
+The Shiny app is hosted at port 3838 inside Docker container, which is forwarded to `HOST_PORT` (your local machine) using `-p` (or `--publish`) flag. This command launches a Shiny app at the `HOST_PORT` (http://localhost:HOST_PORT) that you specify.
+
+  - macOS:
+  
+    ```sh
+    docker run --rm -p HOST_PORT:3838 -v $PWD:/tmp ghcr.io/dohn5r/geocoder_shiny:0.0.1 --shiny
+    ```
+  
+  - Windows (CMD):
+  
+    ```sh
+    docker run --rm -p HOST_PORT:3838 -v "%cd%":/tmp ghcr.io/dohn5r/geocoder_shiny:0.0.1 --shiny
+    ```
+
+For example, with `HOST_PORT` = 3838, the Shiny will be launched at http://localhost:3838 with the following command:
 
   - macOS:
   
@@ -106,7 +120,7 @@ This command launches a Shiny app at http://localhost:3838:
     ```sh
     docker run --rm -p 3838:3838 -v "%cd%":/tmp ghcr.io/dohn5r/geocoder_shiny:0.0.1 --shiny
     ```
-    
+
 Here's a preview of the Shiny app when accessed at http://localhost:3838:
 
 \begin{center}
@@ -266,12 +280,16 @@ or
   ```sh
   docker run ghcr.io/dohn5r/geocoder_shiny:0.0.1 --version
   ```
+  
+  
 
-This container __requires__ both of the following arguments:
+This container __requires__ either of the following arguments:
 
 - `-i` to specify the path to the input address CSV file
+- `--shiny` to launch Shiny app at a specified `HOST_PORT` 
 
-This container takes the following optional arguments:
+
+This container takes the following optional arguments if user would like to run geocoding via command line:
 
 -   `-o` or `--output-file-prefix` to specify prefix of output files. By default, the prefix is `output`, which will generate output-log.txt, output-phi.csv, output-deid.csv
 -   `--f` or `--include-deid-fields` to specify list of fields to include in output. Default fields:
